@@ -130,3 +130,6 @@ dmypy.json
 
 # config file
 config.py
+
+# etl folder
+etl_job/
