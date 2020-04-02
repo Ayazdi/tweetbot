@@ -1,36 +1,46 @@
-from airflow import DAG
-from airflow.operators.python_operator import PythonOperator
+import time
 from datetime import datetime, timedelta
-import logging
-from pymongo import MongoClient
 import random
 import re
-import slack
-from sqlalchemy import create_engine
+import logging
 from config import SLACK_TOKEN
-import time
+
+import pandas as pd
+import slack
+from airflow import DAG
+from airflow.operators.python_operator import PythonOperator
+from pymongo import MongoClient
+from sqlalchemy import create_engine
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+s = SentimentIntensityAnalyzer()
 
 # Creating connections
-CLIENT = MongoClient("mongodb")
+CLIENT = MongoClient("mongodb")  # Mongodb
 DB = CLIENT.mongodb
-
 DATABASE_UP = False
 
-PG = create_engine('postgres://postgres:1234@postgresdb:5432/tweets')
-PG.execute('''CREATE TABLE IF NOT EXISTS kungflu (
+PG = create_engine('postgres://postgres:1234@postgresdb:5432/tweets')  # PostGres
+PG.execute('''CREATE TABLE IF NOT EXISTS kung_tweets (
 id BIGSERIAL,
-text VARCHAR(1024),
-sentiment NUMERIC
+username VARCHAR(128),
+text VARCHAR(2048),
+date_created TIMESTAMPTZ,
+followers INTEGER,
+friends INTEGER,
+negative NUMERIC,
+positive NUMERIC,
+neuteral NUMERIC
 );
 ''')
 
-client = slack.WebClient(token=SLACK_TOKEN)
+client = slack.WebClient(token=SLACK_TOKEN)  # Slac
+
+
 # Creating python callables
-
-
 def extract():
     """gets a random tweet"""
-    tweets = list(DB.kungflu.find())
+    tweets = list(DB.kung_tweets.find())
     if tweets:
         t = random.choice(tweets)
         logging.critical("random tweet: " + t['text'])
@@ -41,39 +51,56 @@ def transform(**context):
     # here we will insert the sentiment analysis results
     extract_connection = context['task_instance']
     tweet = extract_connection.xcom_pull(task_ids="extract")
-    text = re.sub("'", "", tweet["text"])
-    sentiment = 1
+    if 'retweeted_status'in tweet and 'extended_tweet' in tweet['retweeted_status']:
+        text = tweet['retweeted_status']['extended_tweet']["full_text"]
+    elif 'retweeted_status'in tweet and 'text' in tweet['retweeted_status']:
+        text = tweet['retweeted_status']["text"]
+    elif "extended_tweet" in tweet:
+        text = tweet['extended_tweet']["full_text"]
+    else:
+        text = tweet['text']
+    text = re.sub(r"'", ' ', text)
+    text = re.sub(r'@\S+|https?://\S+', '', text)
+    username = tweet['user']['screen_name']
+    date = str(pd.to_datetime(tweet["created_at"]))
+    followers = tweet['user']['followers_count']
+    friends = tweet['user']['friends_count']
+    sentiment = s.polarity_scores(text)
+    neg = sentiment["neg"]
+    pos = sentiment["pos"]
+    neu = sentiment["neu"]
     logging.critical("sentiment" + str(sentiment))
-    results = [text, sentiment]
+    results = [username, text, date, followers, friends, neg, pos, neu]
     return results
 
 
 def load(**context):
     exctract_connection = context["task_instance"]
     results = exctract_connection.xcom_pull(task_ids='transform')
-    tweet, sentiment = results[0], results[1]
-    PG.execute(f"""INSERT INTO kungflu (text, sentiment) VALUES ('''{tweet}''', {sentiment});""")
-    logging.critical(f"tweet + sentiment written to PostGres")
+    PG.execute(f"""INSERT INTO kung_tweets (username, text, date_created, followers, friends, negative, positive, neuteral)
+                VALUES ('''{results[0]}''', '''{results[1]}''', '{results[2]}', {results[3]}, {results[4]}, {results[5]}, {results[6]}, {results[7]});""")
+    logging.critical(f"{results[1]} written to PostGres")
 
 
-def slackbot():
-    prev_tweet = ''
-    while True:
-        # Do the slack post
-        tweet_result = PG.execute('''SELECT kungflu."text" FROM kungflu ORDER BY id DESC LIMIT 1;''').fetchall()
-        # logic to check if the tweet has already been posted, only post if its not already been posted
-        if tweet_result != prev_tweet:
-            prev_tweet = tweet_result
-            response = client.chat_postMessage(channel='#kung_flu', text=f"Here is a tweet we scraped: {tweet_result}")
-        #delay for one minute
-        time.sleep(60)
+# def slackbot(**context):
+#     exctract_connection = context["task_instance"]
+#     results = exctract_connection.xcom_pull(task_ids='transform')
+#     prev_tweet = ''
+#     while True:
+#         if results[6] > 0.1:  # if the positive score is higher than 0.3
+#             tweet_result = results[1]  # text
+#             if tweet_result != prev_tweet:
+#                 prev_tweet = tweet_result
+#                 response = client.chat_postMessage(channel='#kung_flu', text=f"Here is a positive tweet we scraped: {tweet_result}")
+#             #delay for one minute
+#             time.sleep(20)
 
 
 
 # define default arguments
 default_args = {
                 'owner': 'Amirali',
-                'start_date': datetime(2020, 4, 1),
+                'start_date': datetime(2020, 4, 2),
                 # 'end_date':
                 'email': ['amirali.yazdi@yahoo.com'],
                 'email_on_failure': False,
@@ -90,8 +117,9 @@ dag = DAG('etl', description='', catchup=False, schedule_interval=timedelta(minu
 t1 = PythonOperator(task_id='extract', python_callable=extract, dag=dag)
 t2 = PythonOperator(task_id='transform', provide_context=True, python_callable=transform, dag=dag)
 t3 = PythonOperator(task_id='load', provide_context=True, python_callable=load, dag=dag)
-t4 = PythonOperator(task_id='slackbot', python_callable=slackbot, dag=dag)
+# t4 = PythonOperator(task_id='slackbot', provide_context=True, python_callable=slackbot, dag=dag)
 
 
 # setup dependencies
-t1 >> t2 >> t3 >> t4
+t1 >> t2 >> t3
+# t2 >> t4
