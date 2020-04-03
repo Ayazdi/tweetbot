@@ -24,15 +24,6 @@ class TwitterListener(StreamListener):
 
         t = json.loads(data)
 
-        # Extracting the full text of the tweets:
-        # text = t['text']
-        # if 'extended_tweet' in t:
-        #     text = t['extended_tweet']['full_text']
-        # if 'retweeted_status' in t:
-        #     r = t['retweeted_status']
-        # if 'extended_tweet' in r:
-        #     text = r['extended_tweet']['full_text']
-
         tweet = {
         'text': t["text"],
         'username': t['user']['screen_name'],
