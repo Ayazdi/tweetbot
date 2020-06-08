@@ -14,6 +14,7 @@ from sqlalchemy import create_engine
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.svm import LinearSVC
+import pickle
 
 
 # Creating connections
@@ -21,7 +22,8 @@ CLIENT = MongoClient("mongodb")  # Mongodb
 DB = CLIENT.mongodb
 DATABASE_UP = False
 
-PG = create_engine('postgres://postgres:1234@postgresdb:5432/tweets')  # PostGres
+# PostGres connections and table
+PG = create_engine('postgres://postgres:1234@postgresdb:5432/tweets')
 PG.execute('''CREATE TABLE IF NOT EXISTS kung_tweets (
 id BIGSERIAL,
 username VARCHAR(128),
@@ -43,15 +45,8 @@ client = slack.WebClient(token=SLACK_TOKEN)  # Slac
 s = SentimentIntensityAnalyzer()
 
 # Sarcasm classifier
-df = pd.read_sql("sarcasm", PG)  # getting data from PostGres
-X = df['headline']
-y = df['is_sarcastic']
-
 tv = TfidfVectorizer(max_features=5000, ngram_range=(1, 1), lowercase=True)
-X = list(X)
-X = tv.fit_transform(X)
-lsvc = LinearSVC()
-lsvc.fit(X, y)
+lsvc = pickle.load(open('sarcasm_model.sav', 'rb'))
 
 
 # Creating python callables
@@ -99,18 +94,6 @@ def load(**context):
                 VALUES ('''{results[0]}''', '''{results[1]}''', '{results[2]}', {results[3]}, {results[4]}, {results[5]}, {results[6]}, {results[7]});""")
     logging.critical(f"{results[1]} written to PostGres")
 
-# def slackbot(**context):
-#     exctract_connection = context["task_instance"]
-#     results = exctract_connection.xcom_pull(task_ids='transform')
-#     prev_tweet = ''
-#     if results[5] > 0.2:  # if the tweet is negative
-#         tweet_result = results[1]  # text
-#         if tweet_result != prev_tweet:
-#             prev_tweet = tweet_result
-#             response = client.chat_postMessage(channel='#kung_flu', text=f"Here is a horrible tweet about coronavirus: {tweet_result}")
-#         #delay for one minute
-#         time.sleep(20)
-
 
 def predict_sarcasm(**context):
     exctract_connection = context["task_instance"]
@@ -119,8 +102,8 @@ def predict_sarcasm(**context):
     text = tv.transform([text]).toarray()
     sarcasm = lsvc.predict(text)
     return sarcasm
-#
-#
+
+
 def slackbot(**context):
     exctract_connection = context["task_instance"]
     results = exctract_connection.xcom_pull(task_ids='transform')
@@ -131,9 +114,8 @@ def slackbot(**context):
         if tweet_result != prev_tweet:
             prev_tweet = tweet_result
             response = client.chat_postMessage(channel='#kung_flu', text=f"Here is a sarcastic tweet about coronavirus: {tweet_result}")
-        #delay for one minute
-        time.sleep(20)
-
+        # delay for one minute
+        time.sleep(60)
 
 
 # define default arguments
