@@ -133,3 +133,10 @@ config.py
 
 # etl folder
 etl_job/
+
+# airflow files
+/dags/dags/
+/dags/logs/
+airflow.cfg
+airflow.db
+unittests.cfg

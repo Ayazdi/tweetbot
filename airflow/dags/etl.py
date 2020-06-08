@@ -15,7 +15,10 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.svm import LinearSVC
 import pickle
+import os
 
+# defining path to read file for airflow
+AIRFLOW_HOME = os.getenv('AIRFLOW_HOME')
 
 # Creating connections
 CLIENT = MongoClient("mongodb")  # Mongodb
@@ -45,8 +48,8 @@ client = slack.WebClient(token=SLACK_TOKEN)  # Slac
 s = SentimentIntensityAnalyzer()
 
 # Sarcasm classifier
-tv = TfidfVectorizer(max_features=5000, ngram_range=(1, 1), lowercase=True)
-lsvc = pickle.load(open('sarcasm_model.sav', 'rb'))
+tv = pickle.load(open(AIRFLOW_HOME + '/dags/vectorizer.sav', 'rb'))
+lsvc = pickle.load(open(AIRFLOW_HOME + '/dags/sarcasm_model.sav', 'rb'))
 
 
 # Creating python callables

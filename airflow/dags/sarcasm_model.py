@@ -22,6 +22,7 @@ def vectorize_train():
 
 lsvc, tv = vectorize_train()
 pickle.dump(lsvc, open('sarcasm_model.sav', 'wb'))
+pickle.dump(tv, open('vectorizer.sav', 'wb'))
 
 
 def predict_sarcasm(tweet, lsvc, tv):
