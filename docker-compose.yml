@@ -32,6 +32,10 @@ services:
     depends_on:
     - mongodb
     - postgresdb
+    deploy:
+     resources:
+       limits:
+         memory: "4000M"
 
   postgresdb:
     image: postgres
