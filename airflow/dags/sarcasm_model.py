@@ -6,6 +6,11 @@ import pickle
 
 
 def vectorize_train():
+    """
+    Reads the data and train a SVM sarcasm classifier model
+
+    return: model and vectorizer
+    """
     df = pd.read_csv("Sarcasm_Headlines_Dataset.csv")
     X = df['headline']
     y = df['is_sarcastic']

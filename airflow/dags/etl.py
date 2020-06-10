@@ -17,7 +17,7 @@ from sklearn.svm import LinearSVC
 import pickle
 import os
 
-# defining path to read file for airflow
+# defining path to read files for airflow
 AIRFLOW_HOME = os.getenv('AIRFLOW_HOME')
 
 # Creating connections
@@ -42,7 +42,7 @@ neuteral NUMERIC
 
 client = slack.WebClient(token=SLACK_TOKEN)  # Slac
 
-# Applying models:
+# Loading models:
 
 # Sentiment analysis
 s = SentimentIntensityAnalyzer()
@@ -54,7 +54,7 @@ lsvc = pickle.load(open(AIRFLOW_HOME + '/dags/sarcasm_model.sav', 'rb'))
 
 # Creating python callables
 def extract():
-    """gets a random tweet"""
+    """extract a random tweet from MongoDB"""
     tweets = list(DB.kung_tweets.find())
     if tweets:
         t = random.choice(tweets)
@@ -63,7 +63,15 @@ def extract():
 
 
 def transform(**context):
-    # here we will insert the sentiment analysis results
+    """
+    Transform tweets
+
+    Input: Tweets in JSON format from the extract function
+
+    Cleans the text, analyzes the sentiment and extracts metadata
+
+    return: A list with all metadata of the tweet
+    """
     extract_connection = context['task_instance']
     tweet = extract_connection.xcom_pull(task_ids="extract")
     # getting the full text from the tweets
@@ -91,6 +99,7 @@ def transform(**context):
 
 
 def load(**context):
+    """Loads metadata to PostGreSQL server"""
     exctract_connection = context["task_instance"]
     results = exctract_connection.xcom_pull(task_ids='transform')
     PG.execute(f"""INSERT INTO kung_tweets (username, text, date_created, followers, friends, negative, positive, neuteral)
@@ -99,6 +108,7 @@ def load(**context):
 
 
 def predict_sarcasm(**context):
+    """Clasify the sarcasm of the tweet"""
     exctract_connection = context["task_instance"]
     results = exctract_connection.xcom_pull(task_ids='transform')
     text = results[1]
@@ -108,6 +118,7 @@ def predict_sarcasm(**context):
 
 
 def slackbot(**context):
+    """Posts a message on the Slack channel if the tweet was clasified as sarcastic"""
     exctract_connection = context["task_instance"]
     results = exctract_connection.xcom_pull(task_ids='transform')
     sarcasm = exctract_connection.xcom_pull(task_ids='predict_sarcasm')
@@ -116,32 +127,38 @@ def slackbot(**context):
         tweet_result = results[1]  # text
         if tweet_result != prev_tweet:
             prev_tweet = tweet_result
-            response = client.chat_postMessage(channel='#kung_flu', text=f"Here is a sarcastic tweet about coronavirus: {tweet_result}")
+            response = client.chat_postMessage(
+                channel='#kung_flu', text=f"Here is a sarcastic tweet about coronavirus: {tweet_result}")
         # delay for one minute
         time.sleep(60)
 
 
 # define default arguments
 default_args = {
-                'owner': 'Amirali',
-                'start_date': datetime(2020, 4, 1),
-                # 'end_date':
-                'email': ['amirali.yazdi@yahoo.com'],
-                'email_on_failure': False,
-                'email_on_retry': False,
-                "retries": 1,
-                "retry_delay": timedelta(minutes=1)
+    'owner': 'Amirali',
+    'start_date': datetime(2020, 4, 1),
+    # 'end_date':
+    'email': ['amirali.yazdi@yahoo.com'],
+    'email_on_failure': False,
+    'email_on_retry': False,
+    "retries": 1,
+    "retry_delay": timedelta(minutes=1)
 }
 
 # instantiate a DAG
-dag = DAG('etl', description='', catchup=False, schedule_interval=timedelta(minutes=1), default_args=default_args)
+dag = DAG('etl', description='', catchup=False,
+          schedule_interval=timedelta(minutes=1), default_args=default_args)
 
 # define task
 t1 = PythonOperator(task_id='extract', python_callable=extract, dag=dag)
-t2 = PythonOperator(task_id='transform', provide_context=True, python_callable=transform, dag=dag)
-t3 = PythonOperator(task_id='load', provide_context=True, python_callable=load, dag=dag)
-t4 = PythonOperator(task_id='predict_sarcasm', provide_context=True, python_callable=predict_sarcasm, dag=dag)
-t5 = PythonOperator(task_id='slackbot', provide_context=True, python_callable=slackbot, dag=dag)
+t2 = PythonOperator(task_id='transform', provide_context=True,
+                    python_callable=transform, dag=dag)
+t3 = PythonOperator(task_id='load', provide_context=True,
+                    python_callable=load, dag=dag)
+t4 = PythonOperator(task_id='predict_sarcasm', provide_context=True,
+                    python_callable=predict_sarcasm, dag=dag)
+t5 = PythonOperator(task_id='slackbot', provide_context=True,
+                    python_callable=slackbot, dag=dag)
 
 
 # setup dependencies
