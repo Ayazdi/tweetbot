@@ -108,7 +108,7 @@ def load(**context):
 
 
 def predict_sarcasm(**context):
-    """Clasify the sarcasm of the tweet"""
+    """Classify the sarcasm of the tweet"""
     exctract_connection = context["task_instance"]
     results = exctract_connection.xcom_pull(task_ids='transform')
     text = results[1]
