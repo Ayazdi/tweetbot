@@ -27,7 +27,7 @@ This Dockerized data pipeline extract tweets with given tags from Twitter and st
 3. Enter your Twitter and Slack token credentials in the config_example.py and rename it to config.py
 
 4. Go to the main folder of the project in the terminal and run
-`docker-compose build $$ docker-compose up`
+`docker-compose build && docker-compose up`
 
 ## Contacts:
 https://www.linkedin.com/in/amirali-yazdi-872b5460/
